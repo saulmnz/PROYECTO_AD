@@ -24,7 +24,7 @@ public class RestRex {
         rexService.procesarLibro(libro);
 
         // DEVOLVEMOS QUE TODO HA IDO BIEN
-        return ResponseEntity.ok("REGISTRO XML CREADO Y ENVIADO A BASES DE DATOS PARAAAA EL LIBRO = " + libro.getNome());
+        return ResponseEntity.ok("REGISTRO XML CREADO CORRECTAMENTE PARAAAA EL LIBRO = " + libro.getNome());
     }
 
     // NUEVO ENDPOINT PARA CONSULTAR EL XML POR ISBN

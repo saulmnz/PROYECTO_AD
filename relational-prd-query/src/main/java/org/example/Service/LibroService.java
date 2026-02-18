@@ -19,9 +19,9 @@ public class LibroService {
         libroRepository.save(libro);
     }
 
-    // BUSCAR UN LIBRO POR SU ISBN
+    // BUSCAR LIBRO POR SU ISBN
     public Optional<Libro> buscarPorIsbn(String isbn) {
-        return libroRepository.findByIsbn(isbn);
+        return libroRepository.findById(isbn);
     }
 
     // BUSCAR LIBROS POR SU NOMBRE

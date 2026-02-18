@@ -2,6 +2,7 @@ package org.example.Service;
 
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.fasterxml.jackson.dataformat.xml.ser.ToXmlGenerator;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.example.Model.Libro;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
@@ -26,8 +27,6 @@ public class RexService {
     // METODO QUE COORDINA TODAS LAS ACCIONES
     public void procesarLibro(Libro libro) {
         crearXml(libro);
-        enviarAPostgres(libro);
-        enviarAMongo(libro);
     }
 
     // METODO QUE ESCRIBE EL ARCHIVO XML LOCALMENTE (AHORA CON JACKSON)
@@ -40,45 +39,15 @@ public class RexService {
 
             // INICIALIZAMOS JACKSON
             XmlMapper xmlMapper = new XmlMapper();
+            xmlMapper.registerModule(new JavaTimeModule());
+            xmlMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
             xmlMapper.enable(SerializationFeature.INDENT_OUTPUT);
             xmlMapper.configure(ToXmlGenerator.Feature.WRITE_XML_DECLARATION, true);
             xmlMapper.writeValue(archivo, libro);
 
         } catch (Exception e) {
             System.out.println("ERROOORCH AL ESCRIBIR XML: " + e.getMessage());
-        }
-    }
-
-    // ENVIAR AL MICROSERVICIO RELACIONAL (POSTGRES)
-    private void enviarAPostgres(Libro libro) {
-        try {
-            String url = "http://localhost:8091/api/v1/relational/registro";
-
-            // FORZAMOS EL ENVIO EN FORMATO JSON
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<Libro> request = new HttpEntity<>(libro, headers);
-
-            rest.postForObject(url, request, String.class);
-        } catch (Exception e) {
-            // POR SI EL MICROSERVICIO AUN NO ESTA ENCENDIDO
-            System.out.println("ERRORRR = MICROSERVICIO POSTGRES NO DISPONIBLE AÚN.");
-        }
-    }
-
-    // ENVIAR AL MICROSERVICIO NO RELACIONAL (MONGO )
-    private void enviarAMongo(Libro libro) {
-        try {
-            String url = "http://localhost:8093/api/v1/nonrelational/registro";
-
-            // FORZAMOS EL ENVIO EN FORMATO JSON
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<Libro> request = new HttpEntity<>(libro, headers);
-
-            rest.postForObject(url, request, String.class);
-        } catch (Exception e) {
-            System.out.println("EEERRROORCH = MICROSERVICIO MONGO NO DISPONIBLE AÚN.");
         }
     }
 

@@ -20,7 +20,6 @@ public class RestLibro {
     @PostMapping("/registro")
     public ResponseEntity<String> registrar(@RequestBody Libro libro) {
         libroService.guardarLibro(libro);
-
         return ResponseEntity.ok("LIBRO ALMACENADO EN POSTGRESSSS");
     }
     // ENDPOINT PARA BUSCAR POR ISBN DIRECTAMENTE EN LA URL

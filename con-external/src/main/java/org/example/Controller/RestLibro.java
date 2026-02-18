@@ -19,7 +19,7 @@ public class RestLibro {
         libroService.enviarLibro(libro);
 
         // PARA SABER SI SE REALIZÓ DE FORMA CORRECTA O NO
-        return ResponseEntity.ok("LIBRO PROCESADO Y ENVIADO CON EXXXITOOOO = " + libro.getNome());
+        return ResponseEntity.ok("LIBRO PROCESADO Y ENVIADO A TODOS LOS SERVICIOS CON EXXXITOOOO = " + libro.getNome());
     }
 
     // GET POR ISBN
