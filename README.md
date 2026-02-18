@@ -15,7 +15,55 @@
 
 ---
 
+<br>
+
 ## ARQUITECTURA DEL SISTEMA 🔺
+
+```mermaid
+graph TD
+    %% --- BLOQUE 1: CLIENTE ---
+    subgraph CLIENTE ["FRONTEND"]
+        direction TB
+        UI["Interfaz Web (HTML / JS)"]
+    end
+
+    %% --- BLOQUE 2: EL ORQUESTADOR ---
+    subgraph ORQUESTADOR ["CON-EXTERNAL (8095)"]
+        direction TB
+        GW["DISTRIBUIDOR"]
+    end
+
+    %% --- BLOQUE 3: MICROSERVICIOS ---
+    subgraph MICROSERVICIOS ["PRODUCTORES"]
+        direction TB
+        Rex["PRD-REX (8090)"]
+        SqlServ["RELATIONAL (8091)"]
+        MongoServ["NON-RELATIONAL (8093)"]
+    end
+
+    %% --- BLOQUE 4: ALMACENAMIENTO ---
+    subgraph PERSISTENCIA ["ALMACENAMIENTO"]
+        direction TB
+        XML[("Fichero .xml")]
+        DB_PG[("PostgreSQL")]
+        DB_MG[("MongoDB")]
+    end
+
+    %% --- CONEXIONES ---
+    %% Del Cliente al Jefe
+    UI -->|1. POST JSON| GW
+    
+    %% El Jefe reparte el trabajo
+    GW -->|2. Manda Crear| Rex
+    GW -->|3. Manda Guardar| SqlServ
+    GW -->|4. Manda Guardar| MongoServ
+
+    %% Guardado físico
+    Rex --> XML
+    SqlServ --> DB_PG
+    MongoServ --> DB_MG
+
+```
 
 ### FRONTEND 🔻
 
@@ -50,12 +98,67 @@
 ### PRD-REX 8090 🔻
 
 >[!TIP]
-> ***MICROSERVICIO DEDICADO A LA PERSISTENCIA DE FICHEROS***
+> ***MICROSERVICIO DEDICADO A LA PERSISTENCIA DE FICHEROS, SU ÚNICA RESPONSABILIDAD ES GARANTIZAR QUE EXISTE UNA COPIA FÍSICA DEL DATO EN EL SERVIDOR***
 
 - ***Utiliza la librería jackson XML para serializar los objetos java recibidos a formato XML***
+- ***Genera ficheros con nomenclatura `registro_[ISBN].xml` eb ek directorio local***
 
 <img width="400" height="400" alt="image" src="https://github.com/user-attachments/assets/9241dc94-6e1c-4746-b500-c22c09083776" />
 
+<br>
+<br>
+
+
+- ***DATOS FUNDAMENTALES***
+
+```java
+
+// EN EL SERVICE - DEFINIMOS LA CREACIÓN DEL XML
+
+    public void procesarLibro(Libro libro) {
+        crearXml(libro);
+    }
+    private void crearXml(Libro libro) {
+        try {
+            // HE DECIDIDO QUE EL NOMBRE DEL ARCHIVO SERÁ "REGISTRO" + SU ISB PARA MEJOR BÚSQUEDA
+            String nombreArchivo = "registro_" + libro.getIsbn() + ".xml";
+            File archivo = new File(nombreArchivo);
+
+            // INICIALIZAMOS JACKSON
+            XmlMapper xmlMapper = new XmlMapper();
+            xmlMapper.registerModule(new JavaTimeModule());
+            xmlMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+            xmlMapper.enable(SerializationFeature.INDENT_OUTPUT);
+            xmlMapper.configure(ToXmlGenerator.Feature.WRITE_XML_DECLARATION, true);
+            xmlMapper.writeValue(archivo, libro);
+
+        } catch (Exception e) {
+            System.out.println("ERROOORCH AL ESCRIBIR XML: " + e.getMessage());
+        }
+    }
+
+// EN EL CONTROLLER - ENDPOINTS PARA MAPEAR
+
+@RestController
+// RUTA BASE DE ESTE MICROSERVICIO (LA MISMA A LA QUE LLAMA CON-EXTERNAL)
+@RequestMapping("/api/v1/prdrex")
+public class RestRex {
+
+    @Autowired
+    private RexService rexService;
+
+    @PostMapping("/registro")
+    public ResponseEntity<String> registrar(@RequestBody Libro libro) {
+
+        // PROCESAMOS EL LIBRO
+        rexService.procesarLibro(libro);
+
+        // DEVOLVEMOS QUE TODO HA IDO BIEN
+        return ResponseEntity.ok("REGISTRO XML CREADO CORRECTAMENTE PARAAAA EL LIBRO = " + libro.getNome());
+    }
+
+```
 
 ---
 
@@ -64,123 +167,147 @@
 >[!NOTE] 
 > ***USA POSTGRES PARA GUARDAR LOS DATOS ESTRUCTURADOS Y REALIZAR BÚSQUEDAS RÁPIDAS***
 
+- ***Mantiene la integridad referencial de los datos***
+- ***Expone endpoints para la inserción y consulta***
+
 <img width="400" height="400" alt="image" src="https://github.com/user-attachments/assets/9115cfd6-0dc4-42b2-95d3-559ddf06c47a" />
 
+<br>
+<br>
+
+
+- ***DATOS FUNDAMENTALES***
+
+```java
+
+
+@RestController
+// RUTA BASE, COINCIDIENDO CON LA QUE ENVIA CON-EXTERNAL
+@RequestMapping("/api/v1/relational")
+public class RestLibro {
+
+    @Autowired
+    private LibroService libroService;
+
+    @PostMapping("/registro")
+    public ResponseEntity<String> registrar(@RequestBody Libro libro) {
+        libroService.guardarLibro(libro);
+        return ResponseEntity.ok("LIBRO ALMACENADO EN POSTGRESSSS");
+    }
+    // ENDPOINT PARA BUSCAR POR ISBN DIRECTAMENTE EN LA URL
+    @GetMapping("/consulta/isbn/{isbn}")
+    public ResponseEntity<Libro> consultarPorIsbn(@PathVariable String isbn) {
+        Optional<Libro> libro = libroService.buscarPorIsbn(isbn);
+        return libro.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    // ENDPOINT PARA BUSCAR POR NOMBRE
+    @GetMapping("/consulta/nombre/{nome}")
+    public ResponseEntity<List<Libro>> consultarPorNome(@PathVariable String nome) {
+        List<Libro> libros = libroService.buscarPorNome(nome);
+        if (libros.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(libros);
+    }
+
+}
+
+```
 
 ---
 
 ### NON RELATIONAL-PRD-QUERY
 
 >[!NOTE] 
-> ***USA MONGODB PARA GUARDAR EL DOCUMENTO JSON OCMO RESPALDO NoSQL***
+> ***USA MONGODB PARA GUARDAR EL DOCUMENTO JSON COMO RESPALDO NoSQL***
+
+- ***Proporciona redundancia de datos en formato BSON***
+- ***Su función es servir como backup flexible, permitiendo recuperar la información incluso si la estructura relacional se corrompiera***
 
 <img width="400" height="400" alt="image" src="https://github.com/user-attachments/assets/94ce509e-a987-4cdc-a8f1-9a5d76ecaa50" />
 
 
+- ***DATOS FUNDAMENTALES***
 
+```java
 
+@RestController
+@RequestMapping("/api/v1/nonrelational")
+public class LibroController {
 
+    @Autowired
+    private LibroService libroService;
 
+    @PostMapping("/registro")
+    public ResponseEntity<String> registrar(@RequestBody Libro libro) {
+        libroService.guardarLibro(libro);
+        return ResponseEntity.ok("LIBRO GUARDADO CON EXITOOO EN MONGO");
+    }
+
+    // ENDPOINT PARA BUSCAR POR ISBN
+    @GetMapping("/consulta/isbn/{isbn}")
+    public ResponseEntity<Libro> consultarPorIsbn(@PathVariable String isbn) {
+        Optional<Libro> libro = libroService.buscarPorIsbn(isbn);
+        return libro.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    // ENDPOINT PARA BUSCAR POR NOMBRE
+    @GetMapping("/consulta/nome/{nome}")
+    public ResponseEntity<List<Libro>> consultarPorNome(@PathVariable String nome) {
+        List<Libro> libros = libroService.buscarPorNome(nome);
+        if (libros.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(libros);
+    }
+}
+```
 
 
 ---
 
 
 
-## MERMAID PARA ENTENDER LA ARQUITECTURA Y FUNCIONAMIENTO 🏡
+### MERMAID PARA ENTENDER EL FUNCIONAMIENTO 🔺
+
 
 ```mermaid
-graph TD
-    %% --- DEFINICIÓN DE ESTILOS (Paleta Suave) ---
-    classDef frontend fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000;
-    classDef orchestrator fill:#d1c4e9,stroke:#512da8,stroke-width:3px,color:#000;
-    classDef workers fill:#b2dfdb,stroke:#00695c,stroke-width:2px,color:#000;
-    classDef storage fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#000;
-
-    %% --- BLOQUE 1: CLIENTE ---
-    subgraph CLIENTE [" 💻 FRONTEND "]
-        UI["Interfaz Web (HTML/JS)"]:::frontend
-    end
-
-    %% --- BLOQUE 2: EL JEFE ---
-    subgraph ORQUESTADOR [" 📡 CON-EXTERNAL (8095) "]
-        GW["DISTRIBUIDOR CENTRAL"]:::orchestrator
-    end
-
-    %% --- BLOQUE 3: LOS TRABAJADORES ---
-    subgraph WORKERS [" ⚙️ MICROSERVICIOS "]
-        Rex["PRD-REX (8090)<br/>Generador XML"]:::workers
-        SqlServ["RELATIONAL (8091)<br/>Motor SQL"]:::workers
-        MongoServ["NON-RELATIONAL (8093)<br/>Motor NoSQL"]:::workers
-    end
-
-    %% --- BLOQUE 4: ALMACENAMIENTO ---
-    subgraph DATA [" 💾 PERSISTENCIA "]
-        XML[("Fichero .xml")]:::storage
-        DB_PG[("PostgreSQL")]:::storage
-        DB_MG[("MongoDB")]:::storage
-    end
-
-    %% --- CONEXIONES ---
-    UI -->|1. POST JSON| GW
-    
-    %% EL JEFE MANDA A LOS 3 A LA VEZ
-    GW -.->|2a. Crea| Rex
-    GW -->|2b. Guarda| SqlServ
-    GW -->|2c. Guarda| MongoServ
-
-    %% PERSISTENCIA FINAL
-    Rex --> XML
-    SqlServ --> DB_PG
-    MongoServ --> DB_MG
-
-```
-
-```mermaid
-
 sequenceDiagram
     autonumber
     
-    %% PARTICIPANTES CON ALIAS
-    actor User as 👤 USUARIO
-    participant Front as 💻 FRONTEND
-    participant Jefe as 📡 CON-EXTERNAL
-    participant XmlWorker as 📄 PRD-REX
-    participant SqlWorker as 🐘 RELATIONAL
-    participant MongoWorker as 🍃 NON-RELATIONAL
+    %% PARTICIPANTES
+    actor User as USUARIO
+    participant Front as FRONTEND
+    participant Jefe as CON-EXTERNAL
+    participant Rex as PRD-REX (XML)
+    participant Sql as RELATIONAL (SQL)
+    participant Mongo as NO-RELATIONAL (Mongo)
 
     %% INICIO
     User->>Front: Click "GUARDAR LIBRO"
     
-    %% ENVIO AL JEFE
+    %% ENVIO AL ORQUESTADOR
     Front->>Jefe: POST /registro (JSON)
-    Note right of Jefe: Recibe y distribuye
     
-    %% FASE 1: XML
-    rect rgb(235, 245, 251)
-        Note right of Jefe: **1. GENERACIÓN DE FICHERO**
-        Jefe->>XmlWorker: POST /prdrex/registro
-        Note right of XmlWorker: Crea XML localmente
-        XmlWorker-->>Jefe: 200 OK
+    %% PASO 1: XML
+    Note over Jefe, Rex: 1. Generación de Archivo
+    Jefe->>Rex: POST /prdrex/registro
+    Rex-->>Jefe: 200 OK (XML Creado)
+
+    %% PASO 2: BASES DE DATOS (EN PARALELO)
+    Note over Jefe, Mongo: 2. Persistencia en Bases de Datos
+    par Envío a SQL
+        Jefe->>Sql: POST /relational/registro
+        Sql-->>Jefe: 200 OK
+    and Envío a Mongo
+        Jefe->>Mongo: POST /nonrelational/registro
+        Mongo-->>Jefe: 200 OK
     end
 
-    %% FASE 2: BBDD
-    rect rgb(253, 237, 236)
-        Note right of Jefe: **2. PERSISTENCIA EN BBDD**
-        par En paralelo (Lógico)
-            Jefe->>SqlWorker: POST /relational/registro
-            Note right of SqlWorker: INSERT INTO Postgres
-            SqlWorker-->>Jefe: 200 OK
-        and
-            Jefe->>MongoWorker: POST /nonrelational/registro
-            Note right of MongoWorker: db.save(Mongo)
-            MongoWorker-->>Jefe: 200 OK
-        end
-    end
-
-    %% FINAL
-    Jefe-->>Front: 200 OK "Todo Guardado"
-    Front-->>User: ✅ ALERTA: "Éxito Total"
+    %% RESPUESTA FINAL
+    Jefe-->>Front: 200 OK "Procesado"
+    Front-->>User: Alerta: "Libro Guardado"
 ```
 
 
