@@ -15,8 +15,6 @@
 
 ---
 
-<br>
-
 ## ARQUITECTURA DEL SISTEMA 🔺
 
 ```mermaid
@@ -65,7 +63,9 @@ graph TD
 
 ```
 
-### FRONTEND 🔻
+---
+
+### ***FRONTEND http://localhost:8095/index.html 🔻***
 
 > [!NOTE]
 > ***INTERFAZ DE USUARIO, NO TIENE LÓGICA DE NEGOCIO, SOLO CAPTURA LOS DATOS Y LOS ENVÍA AL BACKEND***
@@ -78,7 +78,7 @@ graph TD
 
 ---
 
-### CON-EXTERNAL 8095🔻
+### ***CON-EXTERNAL 8095🔻***
 
 > [!NOTE]
 > ***ES EL INTERMEDIARIO, SIENDO EL ÚNICO PUNTO DE CONTACTO CON EL FRONTEND***
@@ -91,17 +91,125 @@ graph TD
 
 <img width="400" height="400" alt="image" src="https://github.com/user-attachments/assets/2b81c6eb-b6f4-4259-8bcd-994575a74000" />
 
+<br>
+<br>
+
+- ***DATOS FNDAMENTALES***
+
+```java
+
+@Service
+public class LibroService {
+
+    @Autowired
+    private RestTemplate rest;
+
+    // ENVIAR EL LIBRO AL RESTO DE MICROSERVICIOS
+    public void enviarLibro(Libro libro) {
+
+        // ENVIAMOS A PRD-REX (PARA QUE HAGA EL XML)
+        try {
+            String urlRex = "http://localhost:8090/api/v1/prdrex/registro";
+            rest.postForObject(urlRex, libro, String.class);
+        } catch (Exception e) {
+            System.out.println("ERROOORCH AL ENVIAR A PRD-REX: " + e.getMessage());
+        }
+
+        // CABECERAS JSON PARA LAS BASES DE DATOS
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Libro> request = new HttpEntity<>(libro, headers);
+
+        // ENVIAMOS A RELATIONAL (POSTGRES)
+        try {
+            String urlSql = "http://localhost:8091/api/v1/relational/registro";
+            rest.postForObject(urlSql, request, String.class);
+        } catch (Exception e) {
+            System.out.println("ERRORRR AL ENVIAR A POSTGRES: " + e.getMessage());
+        }
+
+        // A NON-RELATIONAL (MONGO)
+        try {
+            String urlMongo = "http://localhost:8093/api/v1/nonrelational/registro";
+            rest.postForObject(urlMongo, request, String.class);
+        } catch (Exception e) {
+            System.out.println("ERRORRR AL ENVIAR A MONGO: " + e.getMessage());
+        }
+    }
+
+    // GET POR ISBN
+    public Libro buscarPorIsbn(String isbn) {
+        String url = "http://localhost:8091/api/v1/relational/consulta/isbn/" + isbn;
+        try {
+            return rest.getForObject(url, Libro.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // GET POR NOMBRE
+    public Libro[] buscarPorNombre(String nombre) {
+        String url = "http://localhost:8091/api/v1/relational/consulta/nombre/" + nombre;
+        try {
+            return rest.getForObject(url, Libro[].class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}
+
+
+// EN EL CONTROLLER
+
+@RestController
+@RequestMapping("/api/v1/libros")
+public class RestLibro {
+
+    @Autowired
+    private LibroService libroService;
+
+    // ESCUCHA DE PETICIONES POST EN /REGISTRO
+    @PostMapping("/registro")
+    public ResponseEntity<String> registrarLibro(@RequestBody Libro libro) {
+        libroService.enviarLibro(libro);
+
+        // PARA SABER SI SE REALIZÓ DE FORMA CORRECTA O NO
+        return ResponseEntity.ok("LIBRO PROCESADO Y ENVIADO A TODOS LOS SERVICIOS CON EXXXITOOOO = " + libro.getNome());
+    }
+
+    // GET POR ISBN
+    @GetMapping("/consulta/isbn/{isbn}")
+    public ResponseEntity<Libro> consultarPorIsbn(@PathVariable String isbn) {
+        Libro libro = libroService.buscarPorIsbn(isbn);
+        if (libro != null) {
+            return ResponseEntity.ok(libro);
+        }
+        return ResponseEntity.notFound().build();
+    }
+
+    // GET POR NOMBRE
+    @GetMapping("/consulta/nombre/{nombre}")
+    public ResponseEntity<Libro[]> consultarPorNombre(@PathVariable String nombre) {
+        Libro[] libros = libroService.buscarPorNombre(nombre);
+        if (libros != null && libros.length > 0) {
+            return ResponseEntity.ok(libros);
+        }
+        return ResponseEntity.notFound().build();
+    }
+}
+
+```
 
 ---
 
 
-### PRD-REX 8090 🔻
+### ***PRD-REX 8090 🔻***
 
 >[!TIP]
 > ***MICROSERVICIO DEDICADO A LA PERSISTENCIA DE FICHEROS, SU ÚNICA RESPONSABILIDAD ES GARANTIZAR QUE EXISTE UNA COPIA FÍSICA DEL DATO EN EL SERVIDOR***
 
 - ***Utiliza la librería jackson XML para serializar los objetos java recibidos a formato XML***
-- ***Genera ficheros con nomenclatura `registro_[ISBN].xml` eb ek directorio local***
+- ***Genera ficheros con nomenclatura `registro_[ISBN].xml` en ek directorio local***
 
 <img width="400" height="400" alt="image" src="https://github.com/user-attachments/assets/9241dc94-6e1c-4746-b500-c22c09083776" />
 
@@ -162,7 +270,7 @@ public class RestRex {
 
 ---
 
-### RELATIONAL-PRD-QUERY 8091
+### ***RELATIONAL-PRD-QUERY 8091***
 
 >[!NOTE] 
 > ***USA POSTGRES PARA GUARDAR LOS DATOS ESTRUCTURADOS Y REALIZAR BÚSQUEDAS RÁPIDAS***
@@ -179,8 +287,6 @@ public class RestRex {
 - ***DATOS FUNDAMENTALES***
 
 ```java
-
-
 @RestController
 // RUTA BASE, COINCIDIENDO CON LA QUE ENVIA CON-EXTERNAL
 @RequestMapping("/api/v1/relational")
@@ -217,7 +323,7 @@ public class RestLibro {
 
 ---
 
-### NON RELATIONAL-PRD-QUERY
+### ***NON RELATIONAL-PRD-QUERY***
 
 >[!NOTE] 
 > ***USA MONGODB PARA GUARDAR EL DOCUMENTO JSON COMO RESPALDO NoSQL***
@@ -268,8 +374,7 @@ public class LibroController {
 ---
 
 
-
-### MERMAID PARA ENTENDER EL FUNCIONAMIENTO 🔺
+### ***MERMAID PARA ENTENDER EL FUNCIONAMIENTO 🔺***
 
 
 ```mermaid
