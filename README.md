@@ -5,7 +5,7 @@
 ---
 
 > [!WARNING]
-> ***EL OBJETIVO DE ESTE MICROSERVICIO ES GESTIONAR EL INVENTARIO DE UNA BIBLIOTECA***
+> ***EL OBJETIVO DE ESTE SERVICIO ES GESTIONAR EL INVENTARIO DE UNA BIBLIOTECA***
 
 - ***El sistema implementa un patrón de persistencia políglota, almacenando simltáneamente en tres formatos distintos***
   
